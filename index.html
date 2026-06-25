@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가계부</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --text:#2b2f38; --muted:#8a8f99;
+    --income:#2e8b57; --expense:#e0533d; --accent:#4263eb; --border:#e7e9ed;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Segoe UI',Apple SD Gothic Neo,Malgun Gothic,sans-serif;
+    background:var(--bg); color:var(--text);
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:24px 16px 60px;}
+  h1{font-size:22px; margin:0 0 16px;}
+  .summary{display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;}
+  .summary .card{flex:1; min-width:140px; background:var(--card); border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .summary .card .label{font-size:13px; color:var(--muted); margin-bottom:6px;}
+  .summary .card .value{font-size:20px; font-weight:700;}
+  .summary .income .value{color:var(--income);}
+  .summary .expense .value{color:var(--expense);}
+  .summary .balance .value{color:var(--accent);}
+
+  .panel{background:var(--card); border-radius:12px; padding:18px; margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .panel h2{font-size:16px; margin:0 0 14px;}
+
+  form{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted);}
+  input, select{
+    padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+    background:#fafbfc; color:var(--text);
+  }
+  .type-toggle{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .type-toggle button{
+    border:none; background:#fafbfc; padding:8px 14px; cursor:pointer; font-size:14px; color:var(--muted);
+  }
+  .type-toggle button.active.income-btn{background:var(--income); color:#fff;}
+  .type-toggle button.active.expense-btn{background:var(--expense); color:#fff;}
+
+  button.submit{
+    background:var(--accent); color:#fff; border:none; padding:9px 18px; border-radius:8px;
+    font-size:14px; cursor:pointer;
+  }
+  button.submit:hover{opacity:.9;}
+
+  .filters{display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+  .filters select, .filters input{font-size:14px;}
+
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th, td{padding:9px 8px; text-align:left; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-weight:600; font-size:12px;}
+  td.amount.income{color:var(--income); font-weight:600;}
+  td.amount.expense{color:var(--expense); font-weight:600;}
+  td.actions{text-align:right; white-space:nowrap;}
+  td.actions button{
+    border:none; background:none; cursor:pointer; color:var(--muted); font-size:13px; padding:2px 6px;
+  }
+  td.actions button:hover{color:var(--accent);}
+  .empty{text-align:center; color:var(--muted); padding:30px 0; font-size:14px;}
+
+  .chart-wrap{display:flex; gap:24px; flex-wrap:wrap; align-items:center;}
+  #pieChart{width:180px; height:180px;}
+  .legend{display:flex; flex-direction:column; gap:6px; font-size:13px;}
+  .legend .row{display:flex; align-items:center; gap:8px;}
+  .legend .swatch{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📒 가계부</h1>
+
+  <div class="summary">
+    <div class="card income"><div class="label">이번 달 수입</div><div class="value" id="sumIncome">0원</div></div>
+    <div class="card expense"><div class="label">이번 달 지출</div><div class="value" id="sumExpense">0원</div></div>
+    <div class="card balance"><div class="label">이번 달 잔액</div><div class="value" id="sumBalance">0원</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>공유 / 백업</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button type="button" class="submit" id="btnExport">파일로 내보내기</button>
+      <button type="button" class="submit" id="btnImportTrigger" style="background:#16a085;">파일 가져오기</button>
+      <input type="file" id="fileImport" accept="application/json" style="display:none;">
+      <button type="button" class="submit" id="btnShareLink" style="background:#9b59b6;">공유 링크 생성</button>
+    </div>
+    <div id="shareLinkBox" style="display:none; margin-top:12px;">
+      <input type="text" id="shareLinkInput" readonly style="width:100%; font-size:13px;">
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;">모든 내역은 Supabase DB에 저장되어 실시간으로 공유됩니다. 이 주소를 전달하면 같은 데이터를 보고 함께 기록할 수 있습니다.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>내역 추가</h2>
+    <form id="entryForm">
+      <input type="hidden" id="editId">
+      <div class="field">
+        <label>구분</label>
+        <div class="type-toggle">
+          <button type="button" class="income-btn active" data-type="income">수입</button>
+          <button type="button" class="expense-btn" data-type="expense">지출</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>날짜</label>
+        <input type="date" id="fDate" required>
+      </div>
+      <div class="field">
+        <label>카테고리</label>
+        <select id="fCategory"></select>
+      </div>
+      <div class="field" style="min-width:140px;">
+        <label>금액</label>
+        <input type="number" id="fAmount" placeholder="0" min="0" required>
+      </div>
+      <div class="field" style="flex:1; min-width:160px;">
+        <label>메모</label>
+        <input type="text" id="fMemo" placeholder="메모 (선택)">
+      </div>
+      <button type="submit" class="submit" id="submitBtn">추가</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>카테고리별 지출 (이번 달)</h2>
+    <div class="chart-wrap">
+      <svg id="pieChart" viewBox="0 0 100 100"></svg>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>내역</h2>
+    <div class="filters">
+      <select id="filterMonth"></select>
+      <select id="filterType">
+        <option value="all">전체</option>
+        <option value="income">수입</option>
+        <option value="expense">지출</option>
+      </select>
+    </div>
+    <table>
+      <thead>
+        <tr><th>날짜</th><th>구분</th><th>카테고리</th><th>메모</th><th style="text-align:right;">금액</th><th></th></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg" style="display:none;">아직 등록된 내역이 없습니다.</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
